@@ -17,11 +17,15 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+type WebhookConfig struct {
+	Path   string `yaml:"path"`
+	Script string `yaml:"script"`
+}
+
 type Config struct {
-	ListenAddr   string `yaml:"listen_addr"`
-	WebhookPath  string `yaml:"webhook_path"`
-	SecretToken  string `yaml:"secret_token"`
-	UpdateScript string `yaml:"update_script"`
+	ListenAddr  string          `yaml:"listen_addr"`
+	SecretToken string          `yaml:"secret_token"`
+	Webhooks    []WebhookConfig `yaml:"webhooks"`
 }
 
 var config Config
@@ -40,56 +44,59 @@ func loadConfig(path string) {
 func main() {
 	loadConfig("config.yaml")
 
-	http.HandleFunc(config.WebhookPath, handleWebhook)
+	for _, wh := range config.Webhooks {
+		path := wh.Path
+		script := wh.Script
 
-	log.Printf("Webhook 服务启动于 %s%s", config.ListenAddr, config.WebhookPath)
+		http.HandleFunc(path, makeHandler(script))
+		log.Printf("监听路径 %s 映射到脚本 %s", path, script)
+	}
+
+	log.Printf("Webhook 服务启动 %s", config.ListenAddr)
 	log.Fatal(http.ListenAndServe(config.ListenAddr, nil))
 }
 
-func handleWebhook(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
-		return
+func makeHandler(scriptPath string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "无法读取请求体", http.StatusBadRequest)
+			return
+		}
+
+		if !verifySignature(r.Header.Get("X-Hub-Signature-256"), body) {
+			http.Error(w, "签名验证失败", http.StatusForbidden)
+			return
+		}
+
+		// 可选 JSON 校验
+		var payload map[string]interface{}
+		if err := json.Unmarshal(body, &payload); err != nil {
+			http.Error(w, "无效 JSON", http.StatusBadRequest)
+			return
+		}
+
+		// 执行对应脚本
+		cmd := exec.Command("bash", scriptPath)
+		var out, stderr bytes.Buffer
+		cmd.Stdout = &out
+		cmd.Stderr = &stderr
+
+		if err := cmd.Run(); err != nil {
+			log.Printf("[%s] 执行失败: %v\n%s", r.URL.Path, err, stderr.String())
+			http.Error(w, "执行失败", http.StatusInternalServerError)
+			return
+		}
+
+		log.Printf("[%s] 执行成功:\n%s", r.URL.Path, out.String())
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, "执行成功\n")
 	}
-
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		http.Error(w, "无法读取请求体", http.StatusBadRequest)
-		return
-	}
-
-	log.Println("收到 Webhook 请求")
-
-	// 校验 GitHub 签名
-	if !verifySignature(r.Header.Get("X-Hub-Signature-256"), body) {
-		http.Error(w, "签名无效", http.StatusForbidden)
-		return
-	}
-
-	// 可选：解析 JSON 验证
-	var payload map[string]interface{}
-	if err := json.Unmarshal(body, &payload); err != nil {
-		log.Println("无效 JSON:", err)
-		http.Error(w, "无效 JSON", http.StatusBadRequest)
-		return
-	}
-
-	// 执行更新脚本
-	cmd := exec.Command("bash", config.UpdateScript)
-	var out bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		log.Printf("执行更新失败: %s\n%s", err, stderr.String())
-		http.Error(w, "更新失败", http.StatusInternalServerError)
-		return
-	}
-
-	log.Println("更新脚本执行成功")
-	w.WriteHeader(http.StatusOK)
-	fmt.Fprintln(w, "更新成功")
 }
 
 func verifySignature(signatureHeader string, body []byte) bool {

@@ -1,4 +1,9 @@
-listen_addr: ":3030"
-webhook_path: "/webhook"
-secret_token: "1KsYqiqVqilFS-PZB1PgFarm"
-update_script: "/home/ubuntu/update.sh"
+listen_addr: ":3001"
+secret_token: "my-secret-token"
+
+webhooks:
+  - path: "/webhook/app1"
+    script: "/home/ubuntu/app1_update.sh"
+
+  - path: "/webhook/app2"
+    script: "/home/ubuntu/app2_update.sh"
