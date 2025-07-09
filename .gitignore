@@ -7,7 +7,7 @@
 *.dll
 *.so
 *.dylib
-
+webhook
 # Test binary, built with `go test -c`
 *.test
 
