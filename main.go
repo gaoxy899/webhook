@@ -25,6 +25,7 @@ type WebhookConfig struct {
 type Config struct {
 	ListenAddr  string          `yaml:"listen_addr"`
 	SecretToken string          `yaml:"secret_token"`
+	Verify      bool            `yaml:"verify"`
 	Webhooks    []WebhookConfig `yaml:"webhooks"`
 }
 
@@ -69,9 +70,11 @@ func makeHandler(scriptPath string) http.HandlerFunc {
 			return
 		}
 
-		if !verifySignature(r.Header.Get("X-Hub-Signature-256"), body) {
-			http.Error(w, "签名验证失败", http.StatusForbidden)
-			return
+		if config.Verify {
+			if !verifySignature(r.Header.Get("X-Hub-Signature-256"), body) {
+				http.Error(w, "签名验证失败", http.StatusForbidden)
+				return
+			}
 		}
 
 		// 可选 JSON 校验
