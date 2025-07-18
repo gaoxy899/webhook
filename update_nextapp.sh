@@ -9,6 +9,7 @@ REMOTE="origin"
 PORT=3000
 RUN_CMD="npm run start"
 BUILD_CMD="npm run build"
+GIT_PROXY=http://127.0.0.1:1080
 
 cd "$APP_DIR" || exit 1
 
@@ -67,7 +68,7 @@ send_ding_message() {
 }
 check_and_update() {
     echo "📦 正在检查远程仓库更新..."
-    git -c http.proxy=http://127.0.0.1:1080 fetch $REMOTE
+    git -c http.proxy=$GIT_PROXY fetch $REMOTE
 
     LOCAL=$(git rev-parse $BRANCH)
     REMOTE_HASH=$(git rev-parse $REMOTE/$BRANCH)
@@ -77,7 +78,7 @@ check_and_update() {
         send_ding_message "检测到farmweb更新:$REMOTE_HASH"
         stop_app
 
-        git -c http.proxy=http://127.0.0.1:1080 pull --rebase
+        git -c http.proxy=$GIT_PROXY pull --rebase
         if [ $? -ne 0 ]; then
            echo "❌ Git pull 执行失败"
            send_ding_message "❌ Git pull 执行失败，请检查网络或代理设置"
@@ -88,7 +89,7 @@ check_and_update() {
         #$BUILD_CMD
 
         start_app
-                send_ding_message "farmweb更新完成"
+            send_ding_message "farmweb更新完成"
     else
         echo "✅ 无需更新，代码已是最新"
     fi
