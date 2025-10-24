@@ -63,9 +63,11 @@ func makeHandler(scriptPath string) http.HandlerFunc {
 			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 			return
 		}
-
+		log.Println(r.URL.Path)
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
+
+			log.Println("无法读取请求体")
 			http.Error(w, "无法读取请求体", http.StatusBadRequest)
 			return
 		}
@@ -80,23 +82,27 @@ func makeHandler(scriptPath string) http.HandlerFunc {
 		// 可选 JSON 校验
 		var payload map[string]interface{}
 		if err := json.Unmarshal(body, &payload); err != nil {
+
+			log.Println("无效 JSON")
 			http.Error(w, "无效 JSON", http.StatusBadRequest)
 			return
 		}
 
-		// 执行对应脚本
-		cmd := exec.Command("bash", scriptPath)
-		var out, stderr bytes.Buffer
-		cmd.Stdout = &out
-		cmd.Stderr = &stderr
+		go func() {
+			// 执行对应脚本
+			cmd := exec.Command("bash", scriptPath)
+			var out, stderr bytes.Buffer
+			cmd.Stdout = &out
+			cmd.Stderr = &stderr
 
-		if err := cmd.Run(); err != nil {
-			log.Printf("[%s] 执行失败: %v\n%s", r.URL.Path, err, stderr.String())
-			http.Error(w, "执行失败", http.StatusInternalServerError)
-			return
-		}
+			if err := cmd.Run(); err != nil {
+				log.Printf("[%s] 执行失败: %v\n%s", r.URL.Path, err, stderr.String())
+				//http.Error(w, "执行失败", http.StatusInternalServerError)
+				return
+			}
+			log.Printf("[%s] 执行成功:\n%s", r.URL.Path, out.String())
+		}()
 
-		log.Printf("[%s] 执行成功:\n%s", r.URL.Path, out.String())
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, "执行成功\n")
 	}
